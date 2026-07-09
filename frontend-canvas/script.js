@@ -1,92 +1,165 @@
-// DOM Elements & Canvas Context
 const canvas = document.getElementById('drawingBoard');
 const ctx = canvas.getContext('2d');
 const statusText = document.getElementById('statusText');
+const warningText = document.getElementById('warningText');
+const resetBtn = document.getElementById('resetBtn');
 
-// Initialize canvas resolution
 canvas.width = 800;
 canvas.height = 500;
 
-// Application State
-let points = []; // Stores coordinate points of the polygon
-let isDrawingMode = true; // Tracks current interaction mode
-const SNAP_DISTANCE = 20; // Proximity radius in pixels to auto-close the shape
+let points = []; 
+let testPoints = []; 
+let isDrawingMode = true; 
+const SNAP_DISTANCE = 20; 
 
-// Event Listener: Handle canvas clicks
+// --- RESET BUTTON LOGIC ---
+resetBtn.addEventListener('click', () => {
+    points = [];
+    testPoints = [];
+    isDrawingMode = true;
+    statusText.innerHTML = "Mode: 🟢 Drawing Phase";
+    warningText.classList.add('hidden'); // Warning chhupa do
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+});
+
+// --- MOUSE CLICK LOGIC ---
 canvas.addEventListener('mousedown', (e) => {
-    // Disable drawing when testing mode is active
-    if (!isDrawingMode) {
-        console.log("Testing Mode active. Drawing disabled.");
-        return;
-    }
-
-    // Calculate relative mouse coordinates
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    // Auto-snap logic to close the polygon
-    // Require at least 3 points to form a closed shape
+    if (!isDrawingMode) {
+        if(points.length > 0) {
+            const inside = isPointInside(x, y, points);
+            testPoints.push({ x: x, y: y, isInside: inside });
+            drawCanvas(); 
+        }
+        return;
+    }
+
     if (points.length > 2) { 
         const firstPoint = points[0];
-        
-        // Calculate Euclidean distance between current click and the starting point
         const distance = Math.sqrt(Math.pow(x - firstPoint.x, 2) + Math.pow(y - firstPoint.y, 2));
 
         if (distance < SNAP_DISTANCE) {
-            // Trigger shape closure
+            // NAYA: Polygon close karne se pehle Valid check karo
+            if (!isValidPolygon(points)) {
+                warningText.classList.remove('hidden'); // Warning dikhao
+                return; // Shape close mat hone do
+            }
+
             isDrawingMode = false; 
             statusText.innerHTML = "Mode: 🔴 Testing Phase (Click to check inside/outside)";
-            drawPolygon(); // Render final closed shape
-            return; // Exit to prevent adding the closing click to the points array
+            drawCanvas(); 
+            return; 
         }
     }
 
-    // Append new coordinate if snap distance is not met
     points.push({ x: x, y: y });
-    drawPolygon(); // Update UI
+    drawCanvas();
 });
 
-// Core render function
-function drawPolygon() {
-    // Clear canvas for the new frame
+// --- 1. RAY CASTING (Point Inside/Outside Check) ---
+function isPointInside(x, y, polygon) {
+    let isInside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        let xi = polygon[i].x, yi = polygon[i].y;
+        let xj = polygon[j].x, yj = polygon[j].y;
+        let intersect = ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+        if (intersect) isInside = !isInside;
+    }
+    return isInside;
+}
+
+// --- 2. THE NEW CHECKER: Valid Polygon (Line Intersection) ---
+function isValidPolygon(poly) {
+    if (poly.length < 3) return true;
+
+    // Har line ko dusri sabhi lines ke sath check karo
+    for (let i = 0; i < poly.length; i++) {
+        let p1 = poly[i];
+        let q1 = poly[(i + 1) % poly.length];
+
+        for (let j = i + 1; j < poly.length; j++) {
+            let p2 = poly[j];
+            let q2 = poly[(j + 1) % poly.length];
+
+            // Agar lines aapas mein judi hui hain (adjacent), toh unhe cross mat maano
+            if (i === j || (i === 0 && j === poly.length - 1) || j === i + 1) {
+                continue;
+            }
+
+            // Agar aapas mein cross ho rahi hain, toh invalid!
+            if (doIntersect(p1, q1, p2, q2)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+// Mathematical functions for line intersection
+function onSegment(p, q, r) {
+    return q.x <= Math.max(p.x, r.x) && q.x >= Math.min(p.x, r.x) &&
+           q.y <= Math.max(p.y, r.y) && q.y >= Math.min(p.y, r.y);
+}
+
+function orientation(p, q, r) {
+    let val = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
+    if (val == 0) return 0;  // colinear
+    return (val > 0) ? 1 : 2; // clock or counterclock wise
+}
+
+function doIntersect(p1, q1, p2, q2) {
+    let o1 = orientation(p1, q1, p2);
+    let o2 = orientation(p1, q1, q2);
+    let o3 = orientation(p2, q2, p1);
+    let o4 = orientation(p2, q2, q1);
+
+    if (o1 != o2 && o3 != o4) return true;
+    if (o1 == 0 && onSegment(p1, p2, q1)) return true;
+    if (o2 == 0 && onSegment(p1, q2, q1)) return true;
+    if (o3 == 0 && onSegment(p2, p1, q2)) return true;
+    if (o4 == 0 && onSegment(p2, q1, q2)) return true;
+    return false;
+}
+
+// --- DRAWING FUNCTION ---
+function drawCanvas() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     if (points.length === 0) return;
 
-    // A. Render Lines
     ctx.beginPath();
     points.forEach((point, index) => {
-        if (index === 0) {
-            ctx.moveTo(point.x, point.y); // Move to the starting point
-        } else {
-            ctx.lineTo(point.x, point.y); // Draw line to subsequent points
-        }
+        if (index === 0) ctx.moveTo(point.x, point.y);
+        else ctx.lineTo(point.x, point.y);
     });
 
-    // Fill the polygon if the shape is closed
     if (!isDrawingMode) {
         ctx.closePath();
-        ctx.fillStyle = "rgba(0, 150, 255, 0.2)"; // Semi-transparent blue fill
+        ctx.fillStyle = "rgba(0, 150, 255, 0.2)"; 
         ctx.fill();
     }
 
-    ctx.strokeStyle = "blue"; // Stroke color
-    ctx.lineWidth = 2; // Stroke width
-    ctx.stroke(); // Apply stroke
+    ctx.strokeStyle = "blue";
+    ctx.lineWidth = 2;
+    ctx.stroke();
 
-    // B. Render Points (Vertices)
     points.forEach((point, index) => {
         ctx.beginPath();
-        ctx.arc(point.x, point.y, 5, 0, Math.PI * 2); // Draw a 5px radius circle
-        
-        // Highlight the starting point in red during drawing mode to indicate the snap target
-        if (index === 0 && isDrawingMode) {
-            ctx.fillStyle = "red";
-        } else {
-            ctx.fillStyle = "black";
-        }
-        
+        ctx.arc(point.x, point.y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = (index === 0 && isDrawingMode) ? "red" : "black";
         ctx.fill();
+    });
+
+    testPoints.forEach((tp) => {
+        ctx.beginPath();
+        ctx.arc(tp.x, tp.y, 6, 0, Math.PI * 2);
+        ctx.fillStyle = tp.isInside ? "green" : "red";
+        ctx.fill();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = "black";
+        ctx.stroke();
     });
 }

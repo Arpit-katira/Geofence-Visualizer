@@ -7,14 +7,42 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="header">
-        <h2>Geofence Visualizer</h2>
-        <p id="statusText">Mode: 🟢 Drawing Phase</p>
-        <p id="warningText" class="hidden">⚠️ Invalid Polygon: Lines cannot intersect!</p>
-        <button id="resetBtn">🔄 Reset Canvas</button>
+    <div class="app-container">
+        
+        <div class="canvas-area">
+            <div id="warningText" class="hidden">
+                ⚠️ Invalid Polygon: Lines cannot intersect!
+            </div>
+            <canvas id="drawingBoard"></canvas>
+        </div>
+
+        <div class="sidebar">
+            <h2>Geofence Visualizer</h2>
+            
+            <div class="modes-section">
+                <p class="section-label">MODES</p>
+                
+                <div class="toggle-row">
+                    <span>Draw Mode</span>
+                    <label class="switch">
+                        <input type="checkbox" id="drawToggle" checked>
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                
+                <div class="toggle-row">
+                    <span>Test Mode</span>
+                    <label class="switch">
+                        <input type="checkbox" id="testToggle">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+            </div>
+
+            <button id="resetBtn">Clear Canvas</button>
+        </div>
+
     </div>
-    
-    <canvas id="drawingBoard"></canvas>
 
     <script src="script.js"></script>
 </body>

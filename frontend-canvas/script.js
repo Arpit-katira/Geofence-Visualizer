@@ -5,30 +5,45 @@ const resetBtn = document.getElementById('resetBtn');
 const drawToggle = document.getElementById('drawToggle');
 const testToggle = document.getElementById('testToggle');
 
-// Dynamic Canvas Resolution
+// --- 1. Map Initialization (Leaflet.js Configuration) ---
+const map = L.map('map', {
+    zoomControl: false 
+}).setView([29.9695, 76.8227], 14); // Default coordinate: Kurukshetra
+
+// Load geographic tile layer from OpenStreetMap asset repository
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '© OpenStreetMap'
+}).addTo(map);
+
+// Anchor viewport zoom navigation controls to bottom-right region
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+// --- 2. Graphic Canvas Layer & Viewport Orchestration ---
 function resizeCanvas() {
     const container = canvas.parentElement;
     canvas.width = container.clientWidth;
     canvas.height = container.clientHeight;
 }
-resizeCanvas(); // Initialize on load
-window.addEventListener('resize', () => {
-    resizeCanvas();
-    drawCanvas(); // Screen resize hone par drawing wapas banao
+resizeCanvas();
+
+// Synchronize canvas rendering cycle with map viewport translation and scale transformations
+map.on('move moveend zoomend', () => {
+    drawCanvas();
 });
 
-let points = []; 
-let testPoints = []; 
-let isDrawingMode = true; 
-const SNAP_DISTANCE = 20; 
+let geoPoints = []; // Master array storing persistent geofence boundary nodes (LatLng configuration)
+let geoTestPoints = []; // Collection array tracking audited test points with containment vectors
+let isDrawingMode = true; // Operational runtime state flag
+const SNAP_DISTANCE = 20; // Proximity threshold in pixels for automated boundary closure
 
-// --- TOGGLE LOGIC ---
+// --- 3. Operational Mode State Controller ---
 function setMode(mode) {
     if (mode === 'DRAW') {
         isDrawingMode = true;
         drawToggle.checked = true;
         testToggle.checked = false;
-        testPoints = []; 
+        geoTestPoints = []; 
         drawCanvas();
     } else if (mode === 'TEST') {
         isDrawingMode = false;
@@ -44,8 +59,10 @@ drawToggle.addEventListener('change', (e) => {
 
 testToggle.addEventListener('change', (e) => {
     if (e.target.checked) {
-        if (points.length > 2) {
-            if (isValidPolygon(points)) {
+        // Project geographical coordinates to active screen space pixels for structural verification
+        const currentPixels = geoPoints.map(gp => map.latLngToContainerPoint([gp.lat, gp.lng]));
+        if (currentPixels.length > 2) {
+            if (isValidPolygon(currentPixels)) {
                 setMode('TEST');
                 drawCanvas();
             } else {
@@ -60,10 +77,10 @@ testToggle.addEventListener('change', (e) => {
     }
 });
 
-// --- RESET BUTTON ---
+// --- 4. Interface Controls & UI Mutators ---
 resetBtn.addEventListener('click', () => {
-    points = [];
-    testPoints = [];
+    geoPoints = [];
+    geoTestPoints = [];
     warningText.classList.add('hidden');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     setMode('DRAW'); 
@@ -76,27 +93,31 @@ function showWarning() {
     }, 3000);
 }
 
-// --- MOUSE CLICK LOGIC ---
-canvas.addEventListener('mousedown', (e) => {
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+// --- 5. Asynchronous Event Pipeline (Map Click Routing) ---
+map.on('click', (e) => {
+    // Extract geographic coordinate matrix and layout-relative screen vector space
+    const latLng = e.latlng;
+    const x = e.containerPoint.x;
+    const y = e.containerPoint.y;
 
     if (!isDrawingMode) {
-        if(points.length > 0) {
-            const inside = isPointInside(x, y, points);
-            testPoints.push({ x: x, y: y, isInside: inside });
+        if(geoPoints.length > 0) {
+            const currentPixels = geoPoints.map(gp => map.latLngToContainerPoint([gp.lat, gp.lng]));
+            const inside = isPointInside(x, y, currentPixels);
+            
+            geoTestPoints.push({ lat: latLng.lat, lng: latLng.lng, isInside: inside });
             drawCanvas(); 
         }
         return;
     }
 
-    if (points.length > 2) { 
-        const firstPoint = points[0];
-        const distance = Math.sqrt(Math.pow(x - firstPoint.x, 2) + Math.pow(y - firstPoint.y, 2));
+    if (geoPoints.length > 2) { 
+        const firstPixel = map.latLngToContainerPoint([geoPoints[0].lat, geoPoints[0].lng]);
+        const distance = Math.sqrt(Math.pow(x - firstPixel.x, 2) + Math.pow(y - firstPixel.y, 2));
 
         if (distance < SNAP_DISTANCE) {
-            if (!isValidPolygon(points)) {
+            const currentPixels = geoPoints.map(gp => map.latLngToContainerPoint([gp.lat, gp.lng]));
+            if (!isValidPolygon(currentPixels)) {
                 showWarning();
                 return; 
             }
@@ -106,11 +127,15 @@ canvas.addEventListener('mousedown', (e) => {
         }
     }
 
-    points.push({ x: x, y: y });
+    geoPoints.push({ lat: latLng.lat, lng: latLng.lng });
     drawCanvas();
 });
 
-// --- RAY CASTING ---
+// --- 6. Computational Geometry & Spatial Topology Core ---
+
+/**
+ * Executes a Ray-Casting algorithm to evaluate point containment inside a non-convex polygon.
+ */
 function isPointInside(x, y, polygon) {
     let isInside = false;
     for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
@@ -122,7 +147,9 @@ function isPointInside(x, y, polygon) {
     return isInside;
 }
 
-// --- VALIDATION ---
+/**
+ * Validates spatial structure integrity by confirming zero self-intersections within the path matrix.
+ */
 function isValidPolygon(poly) {
     if (poly.length < 3) return true;
     for (let i = 0; i < poly.length; i++) {
@@ -162,39 +189,49 @@ function doIntersect(p1, q1, p2, q2) {
     return false;
 }
 
-// --- DRAWING ---
+// --- 7. Vector Graphics Rendering Pipeline ---
 function drawCanvas() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    if (points.length === 0) return;
+    if (geoPoints.length === 0) return;
 
+    // Transform static LatLng coordinate array into real-time screen coordinates relative to the dynamic viewport status
+    const pixels = geoPoints.map(gp => map.latLngToContainerPoint([gp.lat, gp.lng]));
+
+    // Segment Vector Pipeline
     ctx.beginPath();
-    points.forEach((point, index) => {
+    pixels.forEach((point, index) => {
         if (index === 0) ctx.moveTo(point.x, point.y);
         else ctx.lineTo(point.x, point.y);
     });
 
     if (!isDrawingMode) {
         ctx.closePath();
-        ctx.fillStyle = "rgba(66, 133, 244, 0.15)"; 
+        ctx.fillStyle = "rgba(66, 133, 244, 0.2)"; 
         ctx.fill();
     }
 
     ctx.strokeStyle = "#4285f4"; 
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2.5;
     ctx.stroke();
 
-    points.forEach((point, index) => {
+    // Node Anchor Pipeline
+    pixels.forEach((point, index) => {
         ctx.beginPath();
-        ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
+        ctx.arc(point.x, point.y, 5, 0, Math.PI * 2);
         ctx.fillStyle = (index === 0 && isDrawingMode) ? "#ea4335" : "#202124"; 
         ctx.fill();
     });
 
-    testPoints.forEach((tp) => {
+    // Containment Audit Interface Nodes
+    geoTestPoints.forEach((gtp) => {
+        const pt = map.latLngToContainerPoint([gtp.lat, gtp.lng]);
         ctx.beginPath();
-        ctx.arc(tp.x, tp.y, 5, 0, Math.PI * 2);
-        ctx.fillStyle = tp.isInside ? "#34a853" : "#ea4335"; 
+        ctx.arc(pt.x, pt.y, 6, 0, Math.PI * 2);
+        ctx.fillStyle = gtp.isInside ? "#34a853" : "#ea4335"; 
         ctx.fill();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = "black";
+        ctx.stroke();
     });
 }

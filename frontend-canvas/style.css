@@ -17,7 +17,7 @@ body {
     height: 100%;
 }
 
-/* Left Side: Canvas Area Container */
+/* Left Side Container */
 .canvas-area {
     flex: 1;
     height: 100%;
@@ -25,16 +25,24 @@ body {
     overflow: hidden;
 }
 
-/* Canvas taking full grid space */
+/* new: Map Layout Settings */
+#map {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 1; /* Map sabse neeche rahega */
+}
+
+/* Canvas Settings: Above Map transparent layer */
 #drawingBoard {
-    width: 100%;
-    height: 100%;
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
     display: block;
     cursor: crosshair;
-    background-size: 20px 20px;
-    background-image: 
-        linear-gradient(to right, #eaeaea 1px, transparent 1px), 
-        linear-gradient(to bottom, #eaeaea 1px, transparent 1px);
+    z-index: 2; 
+    /* new :  none due to scroll map */
+    pointer-events: none; 
 }
 
 #warningText {
